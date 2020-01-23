@@ -32,48 +32,6 @@ def run_blastn(fasta, output_dir, blastdb, sabir):
     blastn = 'blastn -query %s -db %s -max_target_seqs 5000 -outfmt 6 -out %s -word_size 11 -evalue 10 -reward 2 -penalty -3 -gapopen 5 -gapextend 2'%(fasta, blastdb ,BR1_out)
     print(os.system(blastn))
     
-    
-
-def get_CDS_hits_2(output_dir, sabir, ref_gene_seqs, fasta):
-
-    BR_out = '%s/%s'%(output_dir, sabir)
-    BR = pd.read_table(BR_out, names= ['gene', 'subject', 'PID', 'alnLength', 'mismatchCount', 'gapOpenCount', 'queryStart', 'queryEnd', 'subjectStart', 'subjectEnd', 'eVal', 'bitScore'])
-    BR['alnPerc'] = [abs(BR.loc[index, 'queryStart'] - BR.loc[index, 'queryEnd'])/len(ref_gene_seqs[BR.loc[index,'subject']]) for index in BR.index]
-    BR = BR.set_index('gene')
-    BR = BR.loc[(BR['PID'] > 80) & (BR['eVal'] < 10**(-8)) & (BR['alnPerc'] > 0.8)]
-
-    with open(fasta, 'r') as f:
-        string = f.read()
-    gene_seqs = {x.split('\n')[0].replace('>','').split(' ')[0]:''.join(x.split('\n')[1:]).upper() for x in string.split('\n>')}
-
-    count = 0
-    cds_hits = defaultdict(dict)
-    for subject in set(BR['subject']):
-        BR_s = BR.loc[BR['subject'] == subject]
-        for i in range(len(BR_s)):
-            contig = BR_s.index.tolist()[i]
-            queryEnd = BR_s.iloc[i]['queryEnd']
-            queryStart = BR_s.iloc[i]['queryStart']
-            locus_details = '%s-s%d:e%d'%(contig,queryStart,queryEnd)
-
-            if queryStart > 50 and len(gene_seqs[contig]) - queryEnd > 50:
-                strand = '+' if BR_s.iloc[i]['subjectStart'] < BR_s.iloc[i]['subjectEnd'] else '-' 
-                seq2 = gene_seqs[contig][BR_s.iloc[i]['queryStart'] - 1: BR_s.iloc[i]['queryEnd'] ]
-                seq2 = seq2 if strand == '+' else str(Seq(seq2, IUPAC.unambiguous_dna).reverse_complement())
-
-                if seq2[:3] not in ['CTG', 'ATG', 'GTG', 'TTG']:
-                    count += 1
-                    K = 3
-                    if strand == '+':
-                        seq2m = gene_seqs[contig][BR_s.iloc[i]['queryStart'] - 1 - K: BR_s.iloc[i]['queryEnd'] ]
-                    else:
-                        seq2m = str(Seq(gene_seqs[contig][BR_s.iloc[i]['queryStart'] - 1: BR_s.iloc[i]['queryEnd'] + K], IUPAC.unambiguous_dna).reverse_complement()) 
-                    start_codon_search = [seq2m[:3 + K].find(x) for x in ['CTG', 'ATG', 'GTG', 'TTG'] if seq2m[:3 + K].find(x) != -1]
-                    if len(start_codon_search) > 0:
-                        seq2 = seq2m[start_codon_search[0]:]
-
-                cds_hits[subject].update({locus_details:seq2.upper()})
-    return cds_hits
 
 def check_seq(strand, gene_seqs, contig, BR_s, i, K1, K2):
     if strand == '+':
@@ -82,9 +40,8 @@ def check_seq(strand, gene_seqs, contig, BR_s, i, K1, K2):
         seq2m = str(Seq(gene_seqs[contig][BR_s.iloc[i]['queryStart'] - 1 -K2: BR_s.iloc[i]['queryEnd'] + K1], IUPAC.unambiguous_dna).reverse_complement())     
     return seq2m
 
-def get_CDS_hits(output_dir, gid, ref_gene_seqs, fasta):
+def get_CDS_hits(BR_out, ref_gene_seqs, fasta):
 
-    BR_out = '%s/%s'%(output_dir, gid)
     BR = pd.read_table(BR_out, names= ['gene', 'subject', 'PID', 'alnLength', 'mismatchCount', 'gapOpenCount', 'queryStart', 'queryEnd', 'subjectStart', 'subjectEnd', 'eVal', 'bitScore'])
     BR['alnPerc'] = [abs(BR.loc[index, 'queryStart'] - BR.loc[index, 'queryEnd'])/len(ref_gene_seqs[BR.loc[index,'subject']]) for index in BR.index]
     BR = BR.set_index('gene')
@@ -104,7 +61,7 @@ def get_CDS_hits(output_dir, gid, ref_gene_seqs, fasta):
             queryStart = BR_s.iloc[i]['queryStart']
             locus_details = '%s-s%d:e%d'%(contig,queryStart,queryEnd)
 
-            if queryStart > 50 and len(gene_seqs[contig]) - queryEnd > 50:
+            if queryStart > 20 and len(gene_seqs[contig]) - queryEnd > 20:
                 strand = '+' if BR_s.iloc[i]['subjectStart'] < BR_s.iloc[i]['subjectEnd'] else '-' 
                 seq2 = gene_seqs[contig][BR_s.iloc[i]['queryStart'] - 1: BR_s.iloc[i]['queryEnd'] ]
                 seq2 = seq2 if strand == '+' else str(Seq(seq2, IUPAC.unambiguous_dna).reverse_complement())
@@ -137,7 +94,7 @@ def get_CDS_hits(output_dir, gid, ref_gene_seqs, fasta):
 
                 seq2 = check_seq(strand, gene_seqs, contig, BR_s, i, K1, K2)  
 
-            cds_hits_2[subject].update({locus_details+'(%s)'%str(strand):seq2.upper()})
+                cds_hits_2[subject].update({locus_details+'(%s)'%str(strand):seq2.upper()})
 
     return cds_hits_2
 
@@ -230,9 +187,7 @@ def align_sequences(cds_hits, ref_gene_seqs):
 
         seq1 = ref_gene_seqs[tch_seq]
         for seq_id, seq2 in d.items():
-    #         if seq_id == 'gnl|Prokka|M17172_1-s1583008:e1583778':
-    #             print(tch_seq, seq1)
-    #         print(tch_seq)
+
             if set(seq2) != {'A', 'C', 'G', 'T'}:
                 continue
             count = 0
@@ -247,6 +202,12 @@ def align_sequences(cds_hits, ref_gene_seqs):
 
             sequences = {tch_seq:AA1, seq_id:AA2}
             point_mutations, deletions, insertions = get_alignment_summary(tch_seq, seq_id, sequences)
+
+            if 0 in insertions.keys():
+                seq2 = seq2[len(insertions[0])*3:]
+                del insertions[0]
+                AA2 = Seq(seq2, IUPAC.unambiguous_dna).translate(table = 'Bacterial')
+
             ins = {x:y for x,y in insertions.items() if len(y) > 10}
             dels = {x:y for x,y in deletions.items() if len(y) > 10}
             if len(ins) > 0:
@@ -290,37 +251,40 @@ def align_sequences(cds_hits, ref_gene_seqs):
         res = pd.DataFrame()
     return res
 
-# def get_bbh(BR1_out, BR2_out):
-   
-#     bbh = {}
-    
-#     BR2 = pd.read_table(BR2_out, names= ['gene', 'subject', 'PID', 'alnLength', 'mismatchCount', 'gapOpenCount', 'queryStart', 'queryEnd', 'subjectStart', 'subjectEnd', 'eVal', 'bitScore'], index_col =['gene'])
-#     BR2 = BR2.loc[BR2['PID'] > 80]
-#     BR2 = BR2.loc[BR2['eVal'] < 0.000001]
 
-#     BR1= pd.read_table(BR1_out , names= ['gene', 'subject', 'PID', 'alnLength', 'mismatchCount', 'gapOpenCount', 'queryStart', 'queryEnd', 'subjectStart', 'subjectEnd', 'eVal', 'bitScore'], index_col =['subject'])
-#     BR1 = BR1.loc[BR1['PID'] > 80]
-#     BR1 = BR1.loc[BR1['eVal'] < 0.000001]
+def get_bbh(BR1_out, BR2_out, PID_threshold, output_file_name = '', ref_genes = {}, aln_threshold = 0 ):
+    BR2 = pd.read_table(BR2_out, names= ['gene', 'subject', 'PID', 'alnLength', 'mismatchCount', 'gapOpenCount', 'queryStart', 'queryEnd', 'subjectStart', 'subjectEnd', 'eVal', 'bitScore'])
+    BR2 = BR2.loc[(BR2['PID'] > PID_threshold) & (BR2['eVal'] < 0.000001)]     
+    if ref_genes != {}:
+        BR2['aln_perc'] = [100*BR2.loc[index, 'alnLength']/len(ref_genes[BR2.loc[index, 'subject']]) for index in BR2.index]
+        BR2 = BR2.loc[(BR2['aln_perc'] > aln_threshold)] 
 
-#     bbh = {}
-#     for gene in set(BR1.index):
-#         hits_1 = BR1.loc[[gene]]
-#         subject_1 = hits_1.loc[hits_1['bitScore'] == max(hits_1['bitScore'])].gene.values[0]
+    BR2 = BR2.set_index('gene')
 
-#         if gene not in list(BR2.index):
-#             continue
-#         hits_2 = BR2.loc[[gene]]
-#         subject_2 = hits_2.loc[hits_2['bitScore'] == max(hits_2['bitScore'])].subject.values[0]
+    BR1 = pd.read_table(BR1_out, names= ['gene', 'subject', 'PID', 'alnLength', 'mismatchCount', 'gapOpenCount', 'queryStart', 'queryEnd', 'subjectStart', 'subjectEnd', 'eVal', 'bitScore'])
+    BR1 = BR1.loc[(BR1['PID'] > PID_threshold) & (BR1['eVal'] < 0.000001)]     
+    if ref_genes != {}:
+        BR1['aln_perc'] = [100*BR1.loc[index, 'alnLength']/len(ref_genes[BR1.loc[index, 'gene']]) for index in BR1.index]
+        BR1 = BR1.loc[(BR1['aln_perc'] > aln_threshold)] 
 
-#         if subject_1 == subject_2:
-#             bbh[gene] = subject_1
+    BR1 = BR1.set_index('subject')
 
-#         elif len(hits_1) > 1 and len(hits_2) > 1 and len(hits_1) == len(hits_2):
-#             double_hits = [x for x,y in Counter(list(hits_1['gene'])+list(hits_2['subject'])).items() if y > 1]
-#             if len(double_hits) > 1:
-#                 bbh[gene] = double_hits[0]
-#     return bbh
+    bbh = {}
+    for gene in set(BR1.index) & set(BR2.index):
+        hits_1 = BR1.loc[[gene]]
+        subject_1 = hits_1.loc[hits_1['PID'] == max(hits_1['PID'])].gene.values[0]
 
+        hits_2 = BR2.loc[BR2['subject'] == subject_1]
+        if len(hits_2) == 0:
+            continue
+        gene_2 = hits_2.loc[hits_2['PID'] == max(hits_2['PID'])].index.values[0]
+
+        if gene == gene_2:
+            bbh[gene] = subject_1
+            
+    if output_file_name != '':
+        pickle.dump(bbh, open(output_file_name, 'wb'))
+    return bbh
 
 def get_syntenic_homology(sabir, locus_of_interest, ft):
     
