@@ -16,7 +16,7 @@ setup(
     version='0.0.1',
     description='A package for predicting LoFs using comparative genomics.',
     license='MIT',
-    packages=find_packages(exclude=['tests*']),
+    packages=find_packages('PseudoFind'),
     long_description=open('README.md').read(),
     url='https://github.com/yseif/PseudoFind.git',
     author='Yara Seif',
