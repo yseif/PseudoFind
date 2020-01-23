@@ -16,7 +16,7 @@ setup(
     version='0.0.1',
     description='A package for predicting LoFs using comparative genomics.',
     license='MIT',
-    packages=find_packages('PseudoFind'),
+    packages=find_packages('src'),
     scripts = ['lof_detection.py', 'pangenome_cmds.py'],
     long_description=open('README.md').read(),
     url='https://github.com/yseif/PseudoFind/',
