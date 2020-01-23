@@ -18,7 +18,7 @@ setup(
     license='MIT',
     packages=find_packages(exclude=['tests*']),
     long_description=open('README.md').read(),
-    url='https://github.com/yseif/panMEM.git',
+    url='https://github.com/yseif/PseudoFind.git',
     author='Yara Seif',
     cmdclass={
         'clean': CleanCommand,
