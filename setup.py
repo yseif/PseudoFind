@@ -3,7 +3,7 @@ from setuptools import setup, Command, find_packages
 
 
 class CleanCommand(Command):
-    """Custom clean command to tidy up the project root."""scripts
+    """Custom clean command to tidy up the project root."""
     user_options = []
     def initialize_options(self):
         pass
