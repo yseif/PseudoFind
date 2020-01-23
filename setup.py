@@ -3,7 +3,7 @@ from setuptools import setup, Command, find_packages
 
 
 class CleanCommand(Command):
-    """Custom clean command to tidy up the project root."""
+    """Custom clean command to tidy up the project root."""scripts
     user_options = []
     def initialize_options(self):
         pass
@@ -19,7 +19,7 @@ setup(
     packages=find_packages('PseudoFind'),
     scripts = ['lof_detection', 'pangenome_cmds']
     long_description=open('README.md').read(),
-    url='https://github.com/yseif/PseudoFind.git',
+    url='https://github.com/yseif/PseudoFind/',
     author='Yara Seif',
     cmdclass={
         'clean': CleanCommand,
