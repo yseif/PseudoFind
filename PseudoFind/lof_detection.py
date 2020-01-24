@@ -98,32 +98,32 @@ def get_CDS_hits(BR_out, ref_gene_seqs, fasta):
 
     return cds_hits_2
 
+# def get_all_mutations(ref_seq, seq_id2, sequences):
+#     mutations = []
+#     count = 0
+
+#     aln = pairwise2.align.globalxx(sequences[ref_seq],sequences[seq_id2])
+
+#     for char in aln[0][0]:
+#         if aln[0][1][count] != char:
+#             pos = len(aln[0][0][:count].replace('-',''))
+#             mutations.append('%s%d%s'%(char,pos, aln[0][1][count]))
+#         count +=1
+#     return mutations
+
 def get_all_mutations(ref_seq, seq_id2, sequences):
+
     mutations = []
     count = 0
-    if len(sequences[ref_seq]) <= 1500:
-        aln = pairwise2.align.globalxx(sequences[ref_seq],sequences[seq_id2])
-    else:
-        with open('/home/yara/Downloads/temp.ffn', 'w')as y:
-            y.write('>'+ref_seq+'\n'+str(sequences[ref_seq])+'\n')
-            y.write('>'+seq_id2+'\n'+str(sequences[seq_id2])+'\n')
+    # aln = pairwise2.align.globalxx(sequences[ref_seq],sequences[seq_id2])
+    aln = pairwise2.align.globalxx(sequences[ref_seq], sequences[seq_id2])
 
-        muscle_in = '/home/yara/Downloads/temp.ffn'
-        muscle_out = '/home/yara/Downloads/temp_muscle.afa'
-        muscle_cmd = 'muscle -in %s -out %s'%(muscle_in, muscle_out)
-        os.system(muscle_cmd)
-
-        with open(muscle_out, 'r') as f:
-            string = f.read()
-        aln = {}
-        aln[0] = [''.join(x.split('\n')[1:]) for x in string.split('\n>')]
-
-        
     for char in aln[0][0]:
         if aln[0][1][count] != char:
             pos = len(aln[0][0][:count].replace('-',''))
             mutations.append('%s%d%s'%(char,pos, aln[0][1][count]))
         count +=1
+
     return mutations
 
 def get_insertions(muts_right):
@@ -175,7 +175,34 @@ def get_point_mutations(all_insertions):
 def get_alignment_summary(tch_seq, seq_id, sequences):
     mutations = get_all_mutations(tch_seq, seq_id, sequences)
     mutations_2 = get_all_insertions(seq_id, mutations)    
-    return get_point_mutations(mutations_2)
+    point_mutations, deletions, insertions = get_point_mutations(mutations_2)
+    return point_mutations, deletions, insertions
+
+
+def adj_seqs(ref_seq, seq2, seq_id):
+    
+    AA1 = Seq(ref_seq, IUPAC.unambiguous_dna).translate(table = 'Bacterial')
+    AA2 = Seq(seq2, IUPAC.unambiguous_dna).translate(table = 'Bacterial')
+    aln = pairwise2.align.globalxx(AA2, AA1)
+
+    count = 0
+    for i in range(len(aln[0][0])):
+        if aln[0][1][i] == '-':
+            count += 1
+        else:
+            break
+    seq2 = seq2[count*3:]
+    
+
+    strand = seq_id.split('(')[-1].split(')')[0]
+    start_o = int(seq_id.split('s')[-1].split(':e')[0])
+    start = str(start_o +21 if strand == '+' else start_o)
+    end_o = int(seq_id.split('e')[-1].split('(')[0])
+    end = str(end_o - 21 if strand == '-' else end_o)
+    seq_id = seq_id.replace(str(start_o), start).replace(str(end_o), end)    
+    
+    return seq2, seq_id
+
 
 def align_sequences(cds_hits, ref_gene_seqs):
     rows = []
@@ -184,14 +211,27 @@ def align_sequences(cds_hits, ref_gene_seqs):
 
     to_break = False
     for tch_seq, d in cds_hits.items():
-
+        
         seq1 = ref_gene_seqs[tch_seq]
-        for seq_id, seq2 in d.items():
+        
+        for seq_id_o, seq2 in d.items():
 
             if set(seq2) != {'A', 'C', 'G', 'T'}:
                 continue
             count = 0
 
+            # update the sequence 
+            seq2, seq_id = adj_seqs(seq1, seq2, seq_id_o)
+
+            # check for any start codon mutation
+            if seq2[:3] != seq1[:3]:
+                rows.append({'TCH - locus-tag': tch_seq, 'TCH - sequence':seq1, 'strain - locus-details':seq_id, 'strain - sequence':seq2,
+                            'Mutation type':'Mutation in the start codon','Mutation details': '%s->%s'%(seq1[:3], seq2[:3])
+                            })
+                count += 1  
+
+
+            # remove stop codons    
             AA1 = Seq(seq1, IUPAC.unambiguous_dna).translate(table = 'Bacterial')
             AA2 = Seq(seq2, IUPAC.unambiguous_dna).translate(table = 'Bacterial')
 
@@ -200,16 +240,14 @@ def align_sequences(cds_hits, ref_gene_seqs):
             if AA2[-1] == '*':
                 AA2 = AA2[:-1]
 
-            sequences = {tch_seq:AA1, seq_id:AA2}
+            # run sequence alignment
+            sequences = {tch_seq:AA1, seq_id:AA2}    
             point_mutations, deletions, insertions = get_alignment_summary(tch_seq, seq_id, sequences)
-
-            if 0 in insertions.keys():
-                seq2 = seq2[len(insertions[0])*3:]
-                del insertions[0]
-                AA2 = Seq(seq2, IUPAC.unambiguous_dna).translate(table = 'Bacterial')
-
+            # filter indels > 10
             ins = {x:y for x,y in insertions.items() if len(y) > 10}
             dels = {x:y for x,y in deletions.items() if len(y) > 10}
+
+            # save the results
             if len(ins) > 0:
                 rows.append({'TCH - locus-tag': tch_seq, 'TCH - sequence':seq1, 'strain - locus-details':seq_id, 'strain - sequence':seq2,
                             'Mutation type':'Large insertion','Mutation details':' AND '.join(['%s%s'%(x,y) for x,y in ins.items()])
@@ -228,20 +266,18 @@ def align_sequences(cds_hits, ref_gene_seqs):
                     rows.append({'TCH - locus-tag': tch_seq, 'TCH - sequence':seq1, 'strain - locus-details':seq_id, 'strain - sequence':seq2,
                             'Mutation type':'Early stop codons','Mutation details':' AND '.join([str(x) for x in stop_codons])
                             })
-
                 count += 1
 
-            if AA2[0] not in ['M', 'V', 'L']:
-                rows.append({'TCH - locus-tag': tch_seq, 'TCH - sequence':seq1, 'strain - locus-details':seq_id, 'strain - sequence':seq2,
-                            'Mutation type':'Mutation in the start codon','Mutation details': AA2[0]
-                            })
+            # list out all nucleotide mutations
 
-                count += 1
             if count > 0:
                 sequences = {tch_seq:ref_gene_seqs[tch_seq], seq_id:seq2}
                 na_point_mutations, na_deletions, na_insertions = get_alignment_summary(tch_seq, seq_id, sequences)
                 rows_nucl.append({'Point mutations (nucl)': ' AND '.join(na_point_mutations), 'Insertions (nucl)':' AND '.join(['%s%s'%(x,y) for x,y in na_insertions.items()]),
                  'Deletions (nucl)':' AND '.join(['%s%s'%(x,y) for x,y in na_deletions.items()]), 'strain - locus-details': seq_id, 'TCH - locus-tag':tch_seq})
+
+        del cds_hits[tch_seq][seq_id_o]
+        cds_hits[tch_seq][seq_id] = seq2
 
     na_res = pd.DataFrame(rows_nucl)
     aa_res = pd.DataFrame(rows)
@@ -249,6 +285,7 @@ def align_sequences(cds_hits, ref_gene_seqs):
         res = aa_res.merge(na_res, on = ['strain - locus-details','TCH - locus-tag'], how = 'left')
     else:
         res = pd.DataFrame()
+    
     return res
 
 
